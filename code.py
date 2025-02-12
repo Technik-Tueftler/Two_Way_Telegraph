@@ -15,8 +15,8 @@ from adafruit_motor import servo
 from digitalio import DigitalInOut, Direction, Pull
 
 #  select which display is running the code
-servo_one = False
-servo_two = True
+servo_one = True
+servo_two = False
 
 try:
     from secrets import secrets
@@ -70,80 +70,57 @@ if servo_two:
 
 received_data = io.receive_data(in_feed["key"])
 
-# Pin setup
 SERVO_PIN = board.A1
 FEEDBACK_PIN = board.A2
 button = DigitalInOut(board.A3)
 button.direction = Direction.INPUT
 button.pull = Pull.DOWN
 
-#  angles for servo
 ANGLE_MIN = 0
 ANGLE_MAX = 180
 
-# servo setup
 pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=2 ** 15, frequency=50)
 servo = servo.Servo(pwm)
 servo.angle = None
-
-# setup feedback
 feedback = AnalogIn(FEEDBACK_PIN)
 
-#  position finder function for servo
+new_msg = None
+last_msg = None
+clock = 5
+button_clock = 5
+button_timer_status = False
+ACTING_TIMER_THR = 5
+button_state_last_loop = False
+
+
 def get_position():
     return map_range(feedback.value, CALIB_MIN, CALIB_MAX, ANGLE_MIN, ANGLE_MAX)
 
-#  touch debounce
-touch_state = False
-#  new_msg value
-new_msg = None
-#  last_msg value
-last_msg = None
-#  time.monotonic() holder for pinging IO
-clock = 5
-
 
 while True:
-    #  check IO for new data every 5 seconds
     if (time.monotonic() - clock) > 5:
-        #  get data
         received_data = io.receive_data(in_feed["key"])
-        #  reset clock
         clock = time.monotonic()
-        if button.value:
-            print("taster da")
-        else:
-            print("Taster nicht da")
-    #  if touched...
-    #print(touch.raw_value)
-    # Taster logik hier
-    #if touch.value and touch_state is False:
-        #touch_state = True
-        #print(touch.raw_value)
-        #print("touch erkannt")
-    #  when touch is released...
-    #if not touch.value and touch_state is True:
-        #  get position of servo
-        #print(touch.raw_value)
-        #print("touch erkannt und losgelassen")
-       # pos = get_position()
-        #print(pos)
-        #  send position to IO
-        #io.send_data(out_feed["key"], float(pos))
-        #  delay to settle
-        #time.sleep(1)
-        #  reset touch state
-        #touch_state = False
-    #  if a new value is detected
-    if float(received_data["value"]) != last_msg:
-        #  assign value to new_msg
-        new_msg = float(received_data["value"])
-        #  set servo angle
-        servo.angle = new_msg
-        #  quick delay to settle
-        time.sleep(1)
-        #  release servo
+    if not button.value and button_state_last_loop:
+        button_timer_status = True
+        button_clock = time.monotonic()
         servo.angle = None
-        #  log msg
+        print("start timer")
+    if button_timer_status:
+        if (time.monotonic() - button_clock) > 5:
+            pos = get_position()
+            io.send_data(out_feed["key"], float(pos))
+            print(f"New own servo position {float(pos)}")
+            servo.angle = float(pos)
+            print("reset timer und neuer Wert")
+            button_timer_status = False
+            time.sleep(1)
+
+    if not button_timer_status and float(received_data["value"]) != last_msg:
+        new_msg = float(received_data["value"])
+        servo.angle = new_msg
+        print(f"New servo received position {new_msg}")
+        time.sleep(1)
         last_msg = new_msg
-a
+    button_state_last_loop = button.value
+    time.sleep(0.1)
